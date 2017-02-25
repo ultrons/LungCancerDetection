@@ -8,7 +8,7 @@ import numpy as np
 import dicom
 import scipy
 import matplotlib.pyplot as plt
-
+import pandas as pd
 from skimage import measure, morphology
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
@@ -28,8 +28,7 @@ patients.sort()
 # Following two parameters are tied with one another
 # TODO: Zooming to result in to a given order
 
-image_size=[100, 64, 64]
-rescaling_factor=[1, 4, 4] # Isomorphic resolution of 4mm, 4mm????
+image_size=[100, 24, 24]
 
 # Procedure for loading stack of scan images for one patient
 def load_scan(path):
@@ -71,61 +70,61 @@ def get_pixels_hu(slices):
     return np.array(image, dtype=np.int16)
 
 
-# resampling procedure takes the image(np array)
-# scan is the list of slices, where each dicom slice
-# pixel distance is the distance between centers of each two dimensional pixel
+train_label_file='/home/vaibhavs/Projects/LungCancerDetection/data/stage1_labels.csv'
+train_label_dict=pd.read_csv(train_label_file, index_col=0).to_dict()
+total_train=len(train_label_dict['cancer'].keys())
 
-def resample(image, scan, new_spacing):
-    #current pixel spacing
-    spacing=map(float, ([scan[0].SliceThickness] + scan[0].PixelSpacing))
-    spacing=np.array(list(spacing))
+test_label_file='/home/vaibhavs/Projects/LungCancerDetection/data/stage1_sample_submission.csv'
+test_label_dict=pd.read_csv(test_label_file, index_col=0).to_dict()
+total_test=len(test_label_dict['cancer'].keys())
 
-
-    resize_factor = spacing / new_spacing # elementwise division
-    new_real_shape = image.shape * resize_factor # elementwise multiplication
-    new_shape = np.round(new_real_shape)
-    real_resize_factor = new_shape / image.shape
-
-    image = scipy.ndimage.interpolation.zoom(image, real_resize_factor)
-    return image, new_spacing
-
-
-
-
-
-if singleImage == 1:
-    sample_slices=load_scan(imageDir + '00cba091fa4ad62cc3200a657aeb957e')
-    sample_slice_hu=get_pixels_hu(sample_slices)
-    pix_resampled, spacing = resample(sample_slice_hu, sample_slices, [1,4,4])
-    print("Shape before resampling\t", sample_slice_hu.shape)
-    print("Shape after resampling\t", pix_resampled.shape)
-    print(sample_slice_hu.shape)
-    plt.imshow(sample_slice_hu[80], cmap=plt.cm.gray)
-    plt.show()
-
-    exit()
 
 allImages=os.listdir(imageDir)
-total=len(allImages)
+num_classes=2
 
 #Create a container to store all the image data
-images=np.ndarray((total, image_size[0], image_size[1], image_size[2]),
+train_images=np.ndarray((total_train, image_size[0], image_size[1], image_size[2]),
         dtype=np.uint8)
+test_images=np.ndarray((total_test, image_size[0], image_size[1], image_size[2]),
+        dtype=np.uint8)
+test_image_ids=[]
+
+
+train_labels=np.ndarray((total_train, num_classes))
 i=0
+j=0
+
+
 for imageset_id in allImages:
+
     print("Processing : %s ...." %imageset_id)
     imageset=load_scan(imageDir+imageset_id)
     imageset2pixels=get_pixels_hu(imageset)
-    #newImage, spacing = resample(imageset2pixels, imageset, rescaling_factor)
     newImage  = scipy.ndimage.interpolation.zoom(imageset2pixels,
-            np.array(list(imageset2pixels.shape))/image_size)
-    try:
-        images[i]=newImage
-    except:
-        print("Exception for Patient:%s" %imageset_id)
-        print("Container Shape:", images[i].shape)
-        print("Shape of patient imageset:", newImage.shape)
+             np.array(map(float, image_size))/list(imageset2pixels.shape))
 
-np.save('imgs_data.npy', images)
-print("Total number of sets processed: %d" %total)
+    if imageset_id in train_label_dict['cancer']:
+        train_labels[i]= train_labels[i]*0
+        train_images[i]=newImage
+        train_labels[i][train_label_dict['cancer'][imageset_id]]=1
+        i+=1
+    else:
+        test_image_ids.append(imageset_id)
+        test_images[j]=newImage
+        j+=1
+
+
+test_ids=np.array(list(test_image_ids))
+
+
+
+np.save('imgs_train_data.npy', train_images)
+np.save('imgs_test_data.npy', test_images)
+np.save('test_ids.npy', test_ids)
+np.save('train_labels.npy', train_labels)
+print("Total number of sets processed: %d" %len(allImages))
 print('Saving to .npy files done!')
+
+
+
+
